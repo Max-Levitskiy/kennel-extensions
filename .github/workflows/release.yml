@@ -1,0 +1,27 @@
+name: release-extension
+on:
+  push:
+    tags: ["*-v*"]  # e.g. sd-keepalive-v0.1.0
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          NAME="${TAG%-v*}"
+          VERSION="${TAG##*-v}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: build
+        run: cargo build --release --target wasm32-unknown-unknown -p ${{ steps.tag.outputs.name }}
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/wasm32-unknown-unknown/release/*.wasm
