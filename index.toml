@@ -13,3 +13,11 @@ wasm_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download
 manifest_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/sd-keepalive-v0.1.0/manifest.toml"
 sha256 = "fc86d17cb15c0d204e174f2e3fac4664e83e4475f2da6e4883a75b99354252a4"
 manifest_sha256 = "2414162eeea047acc7bdc875c5d839e3244059cad405c7f2bdfd2ebffceac301"
+
+[[extensions]]
+name = "sketchybar-watchdog"
+version = "0.2.0"
+wasm_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/sketchybar-watchdog-v0.2.0/monitor.wasm"
+manifest_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/sketchybar-watchdog-v0.2.0/manifest.toml"
+sha256 = "103beae186dbd210ecf44e719c2b776d3759f7145c2cb166d4cdccb0ebb2c5d4"
+manifest_sha256 = "edbcabb0ef02302aeaa4257dd7a582e642f05f864ba4649bf1c9004428822def"
