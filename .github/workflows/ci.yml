@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo test --locked --workspace
+      - run: cargo build --locked --release --target wasm32-unknown-unknown --workspace
+      # kennel-gui refuses the whole store if index.toml doesn't parse.
+      - name: index.toml parses
+        run: python3 -c 'import tomllib; tomllib.load(open("index.toml", "rb"))'

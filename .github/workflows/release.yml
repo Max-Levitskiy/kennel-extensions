@@ -3,25 +3,87 @@ on:
   push:
     tags: ["*-v*"]  # e.g. sd-keepalive-v0.1.0
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  release:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+
       - name: parse tag
-        id: tag
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          NAME="${TAG%-v*}"
-          VERSION="${TAG##*-v}"
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          TAG="$GITHUB_REF_NAME"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "NAME=${TAG%-v*}" >> "$GITHUB_ENV"
+          echo "VERSION=${TAG##*-v}" >> "$GITHUB_ENV"
+
+      # The tag, the crate and manifest.toml must all agree. The GUI shows the
+      # index's version but the daemon runs whatever manifest.toml says, so a
+      # mismatch would publish one version under another's name.
+      - name: check versions agree
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$NAME/manifest.toml" ]]; then
+            echo "::error::tag $TAG names no extension directory $NAME/"; exit 1
+          fi
+          field() { sed -n "s/^$1 = \"\(.*\)\"$/\1/p" "$2" | head -1; }
+          manifest_name="$(field name "$NAME/manifest.toml")"
+          manifest_version="$(field version "$NAME/manifest.toml")"
+          crate_version="$(field version "$NAME/Cargo.toml")"
+          if [[ "$manifest_name" != "$NAME" || "$manifest_version" != "$VERSION" || "$crate_version" != "$VERSION" ]]; then
+            echo "::error::tag $TAG disagrees with manifest.toml (name=$manifest_name version=$manifest_version) or Cargo.toml (version=$crate_version)"
+            exit 1
+          fi
+
+      - name: test
+        run: cargo test --locked -p "$NAME"
+
       - name: build
-        run: cargo build --release --target wasm32-unknown-unknown -p ${{ steps.tag.outputs.name }}
-      - name: release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: target/wasm32-unknown-unknown/release/*.wasm
+        run: |
+          cargo build --locked --release --target wasm32-unknown-unknown -p "$NAME"
+          mkdir dist
+          cp "target/wasm32-unknown-unknown/release/${NAME//-/_}.wasm" dist/monitor.wasm
+          cp "$NAME/manifest.toml" dist/manifest.toml
+
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/monitor.wasm dist/manifest.toml --clobber
+          else
+            gh release create "$TAG" dist/monitor.wasm dist/manifest.toml --title "$NAME $VERSION" --notes "Install from kennel's store, or copy both files to ~/Library/Application Support/kennel/extensions/$NAME/."
+          fi
+
+      # Several tags pushed together each rewrite index.toml on main, so a push
+      # can be rejected by a sibling release that got there first. Re-apply this
+      # entry on top of the new main and try again. (A concurrency group would
+      # serialize them too, but it keeps only one pending run and silently
+      # cancels the rest.)
+      - name: update index.toml on main
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          wasm_sha="$(shasum -a 256 dist/monitor.wasm | cut -d' ' -f1)"
+          manifest_sha="$(shasum -a 256 dist/manifest.toml | cut -d' ' -f1)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch --depth=1 origin main
+            git checkout -q -B main origin/main
+            python3 scripts/update_index.py index.toml "$NAME" "$VERSION" \
+              "$base/monitor.wasm" "$base/manifest.toml" "$wasm_sha" "$manifest_sha"
+            if git diff --quiet index.toml; then
+              echo "index.toml already lists $NAME $VERSION with these hashes"; exit 0
+            fi
+            git commit -q -m "chore: publish $NAME $VERSION to index.toml" index.toml
+            if git push origin main; then exit 0; fi
+            echo "push rejected (attempt $attempt), retrying on the new main"
+            sleep $((attempt * 3))
+          done
+          echo "::error::could not update index.toml on main"; exit 1
