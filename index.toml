@@ -1,1 +1,7 @@
-extensions = []
+[[extensions]]
+name = "gdrive-watchdog"
+version = "0.1.0"
+wasm_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/gdrive-watchdog-v0.1.0/monitor.wasm"
+manifest_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/gdrive-watchdog-v0.1.0/manifest.toml"
+sha256 = "e81864f5560a5ed2b848b3367571644f6cdb5eb31d89a7002e25284621ea94fe"
+manifest_sha256 = "c7aa7c759f2150747d1019d2244b744b5d196d30711de1306b00351d10020b2f"
