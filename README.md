@@ -12,7 +12,16 @@ index its GUI reads by default:
 
 Each extension is a `cdylib` crate built to `wasm32-unknown-unknown` against
 `kennel-guest-sdk`, plus a `manifest.toml` that declares the host capabilities it
-may use.
+may use. To write one, see
+[Writing a kennel extension](https://github.com/Max-Levitskiy/kennel/blob/main/docs/writing-extensions.md).
+
+## Adding an extension
+
+1. Create the crate at `<name>/` with `manifest.toml` next to its `Cargo.toml`
+   (`name` in both must be `<name>`), and add `<name>` to the workspace `members`.
+2. `cargo test -p <name>` and
+   `cargo build --release --target wasm32-unknown-unknown -p <name>`.
+3. Open a PR. After merge, release it as below.
 
 ## Releasing
 
@@ -38,3 +47,7 @@ cargo build --release --target wasm32-unknown-unknown --workspace
 
 `kennel-guest-sdk` comes from kennel's `main` branch, pinned by `Cargo.lock`.
 After an SDK change there, run `cargo update -p kennel-guest-sdk`.
+
+## License
+
+[MIT](LICENSE)
