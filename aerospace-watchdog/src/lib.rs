@@ -19,8 +19,15 @@ use kennel_guest_sdk::{
 // One probe, one line out. `id` because guest code has no environment. `-U` keeps
 // another logged-in user's AeroSpace from counting as ours: matching it would
 // relaunch an AeroSpace this user had quit.
-const PROBE: &str = "pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null || { echo not_running; exit 0; }; \
+// pgrep exits 1 for no match and 2 or 3 for its own errors; only 1 means "not
+// running". Any other failure leaves the probe's exit code nonzero, which
+// `decide` reads as Unknown instead of as healthy.
+const PROBE: &str = "pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; rc=$?; \
+    if [ $rc -eq 1 ]; then echo not_running; exit 0; fi; [ $rc -eq 0 ] || exit $rc; \
     if [ -S \"/tmp/bobko.aerospace-$(id -un).sock\" ]; then echo ok; else echo no_socket; fi";
+
+const WAIT_GONE: &str = "for _ in 1 2 3 4 5 6 7 8 9 10; do \
+    pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null || exit 0; sleep 0.5; done";
 
 // AeroSpace binds the socket shortly after launch, so a just-started AeroSpace
 // looks like "running, no socket" for a moment. Two consecutive ticks (~30s at a
@@ -97,6 +104,9 @@ fn my_check() -> Status {
         }
         Decision::Unknown(why) => {
             host_log("warn", &format!("cannot tell whether AeroSpace has its socket: {why}; {}", result.stderr.trim()));
+            // An unreadable tick breaks the streak: two misses with an unknown
+            // between them are not consecutive.
+            host_state_set(STATE_KEY, "0");
             Status::Healthy
         }
     }
@@ -105,11 +115,21 @@ fn my_check() -> Status {
 fn my_fix() {
     host_log("warn", "restarting AeroSpace");
     host_spawn("/usr/bin/killall", &["AeroSpace"]);
-    host_spawn("/bin/sleep", &["2"]);
-    host_spawn("/usr/bin/open", &["-b", "bobko.aerospace"]);
+    // `open` while the old instance is still quitting only activates it, and then
+    // it exits. Wait up to 5s for it to be gone.
+    host_spawn("/bin/sh", &["-c", WAIT_GONE]);
+    let open = host_spawn("/usr/bin/open", &["-b", "bobko.aerospace"]);
     // Start the confirmation over, so the new AeroSpace gets a full debounce
     // window to bind its socket before another restart is considered.
     host_state_set(STATE_KEY, "0");
+    if open.exit_code != 0 {
+        // After this, the probe reads "not running", which is healthy by design,
+        // so nothing retries. Say so instead of claiming a restart.
+        let why = format!("open -b bobko.aerospace exited {}: {}", open.exit_code, open.stderr.trim());
+        host_log("error", &format!("AeroSpace was stopped but did not start again: {why}"));
+        host_notify("AeroSpace did not restart", "It was stopped to recover its control socket, but failed to launch. Start it by hand.");
+        return;
+    }
     host_notify("AeroSpace restarted", "Its control socket was gone, so the bar could not read workspaces.");
 }
 
