@@ -28,7 +28,9 @@ const PROBE: &str = "pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; rc=$?; \
 
 // Exits 0 once this user's AeroSpace is gone. After 5s of SIGTERM it sends
 // SIGKILL and gives that 1s; still alive then exits 1. Fits the 8s host limit.
-const WAIT_GONE: &str = "gone() { ! pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; }; \
+// As in PROBE, only pgrep status 1 means gone; its own errors exit the script.
+const WAIT_GONE: &str = "gone() { pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; rc=$?; \
+    [ $rc -eq 1 ] && return 0; [ $rc -eq 0 ] && return 1; exit $rc; }; \
     for _ in 1 2 3 4 5 6 7 8 9 10; do gone && exit 0; sleep 0.5; done; \
     pkill -9 -x -U \"$(id -u)\" AeroSpace; sleep 1; gone";
 
