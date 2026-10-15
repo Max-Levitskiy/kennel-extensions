@@ -1,4 +1,12 @@
 [[extensions]]
+name = "aerospace-watchdog"
+version = "0.1.0"
+wasm_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/aerospace-watchdog-v0.1.0/monitor.wasm"
+manifest_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/aerospace-watchdog-v0.1.0/manifest.toml"
+sha256 = "1eef792cd6753ef4b19bd06f331cd465585500e4ba58e6aa0dc06c27ae698a02"
+manifest_sha256 = "131bdd457b922dfd8d5b86d6b4ee3a9850fea4532880dbfafcaf20fa9819b1db"
+
+[[extensions]]
 name = "gdrive-watchdog"
 version = "0.1.0"
 wasm_url = "https://github.com/Max-Levitskiy/kennel-extensions/releases/download/gdrive-watchdog-v0.1.0/monitor.wasm"
