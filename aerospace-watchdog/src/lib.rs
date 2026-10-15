@@ -26,8 +26,11 @@ const PROBE: &str = "pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; rc=$?; \
     if [ $rc -eq 1 ]; then echo not_running; exit 0; fi; [ $rc -eq 0 ] || exit $rc; \
     if [ -S \"/tmp/bobko.aerospace-$(id -un).sock\" ]; then echo ok; else echo no_socket; fi";
 
-const WAIT_GONE: &str = "for _ in 1 2 3 4 5 6 7 8 9 10; do \
-    pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null || exit 0; sleep 0.5; done";
+// Exits 0 once this user's AeroSpace is gone. After 5s of SIGTERM it sends
+// SIGKILL and gives that 1s; still alive then exits 1. Fits the 8s host limit.
+const WAIT_GONE: &str = "gone() { ! pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null; }; \
+    for _ in 1 2 3 4 5 6 7 8 9 10; do gone && exit 0; sleep 0.5; done; \
+    pkill -9 -x -U \"$(id -u)\" AeroSpace; sleep 1; gone";
 
 // AeroSpace binds the socket shortly after launch, so a just-started AeroSpace
 // looks like "running, no socket" for a moment. Two consecutive ticks (~30s at a
@@ -116,8 +119,14 @@ fn my_fix() {
     host_log("warn", "restarting AeroSpace");
     host_spawn("/usr/bin/killall", &["AeroSpace"]);
     // `open` while the old instance is still quitting only activates it, and then
-    // it exits. Wait up to 5s for it to be gone.
-    host_spawn("/bin/sh", &["-c", WAIT_GONE]);
+    // it exits. Do not launch until it is confirmed gone.
+    let wait = host_spawn("/bin/sh", &["-c", WAIT_GONE]);
+    if wait.exit_code != 0 {
+        // The streak is kept, so the next check after the cooldown tries again.
+        host_log("error", &format!("old AeroSpace did not exit (wait exited {}); not relaunching", wait.exit_code));
+        host_notify("AeroSpace did not restart", "The old instance would not exit. Will retry.");
+        return;
+    }
     let open = host_spawn("/usr/bin/open", &["-b", "bobko.aerospace"]);
     // Start the confirmation over, so the new AeroSpace gets a full debounce
     // window to bind its socket before another restart is considered.
