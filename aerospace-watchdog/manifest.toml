@@ -1,0 +1,5 @@
+name = "aerospace-watchdog"
+version = "0.1.0"
+description = "Restarts AeroSpace when it runs without its control socket"
+interval_secs = 15
+capabilities = ["spawn", "state", "log", "notify"]
