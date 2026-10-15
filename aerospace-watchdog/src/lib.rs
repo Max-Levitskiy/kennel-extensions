@@ -16,8 +16,10 @@ use kennel_guest_sdk::{
     Manifest, Status,
 };
 
-// One probe, one line out. `id -un` because guest code has no environment.
-const PROBE: &str = "pgrep -x AeroSpace >/dev/null || { echo not_running; exit 0; }; \
+// One probe, one line out. `id` because guest code has no environment. `-U` keeps
+// another logged-in user's AeroSpace from counting as ours: matching it would
+// relaunch an AeroSpace this user had quit.
+const PROBE: &str = "pgrep -x -U \"$(id -u)\" AeroSpace >/dev/null || { echo not_running; exit 0; }; \
     if [ -S \"/tmp/bobko.aerospace-$(id -un).sock\" ]; then echo ok; else echo no_socket; fi";
 
 // AeroSpace binds the socket shortly after launch, so a just-started AeroSpace
