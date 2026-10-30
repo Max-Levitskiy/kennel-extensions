@@ -8,7 +8,7 @@ index its GUI reads by default:
 |---|---|
 | `sd-keepalive` | touches a file on the SD card so its reader's PCIe link never idle-parks |
 | `gdrive-watchdog` | Google Drive FileProvider stalls; restarts Drive |
-| `sketchybar-watchdog` | sketchybar missing from any display; restarts it (needs `kennel-barprobe` from Kennel.app) |
+| `sketchybar-watchdog` | sketchybar missing from any display that should show it; restarts it (needs a kenneld with the `window_server` capability) |
 | `aerospace-watchdog` | AeroSpace running without its CLI socket, so `aerospace` commands fail; restarts AeroSpace |
 
 Each extension is a `cdylib` crate built to `wasm32-unknown-unknown` against
