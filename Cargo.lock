@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "sketchybar-watchdog"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kennel-guest-sdk",
  "serde_json",

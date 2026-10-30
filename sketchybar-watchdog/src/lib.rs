@@ -13,14 +13,13 @@
 // window server for sketchybar's actual window geometry, per display. That covers
 // the wake case too, without having to guess at causes.
 
-use kennel_guest_sdk::{
-    host_launchctl, host_log, host_spawn, host_state_get, host_state_set, kennel_extension,
-    Manifest, Status,
-};
+mod verdict;
 
-// The probe lives next to kenneld inside Kennel.app. Spawned through `sh -c` so
-// $HOME expands -- guest code has no environment of its own.
-const PROBE: &str = "$HOME/Applications/Kennel.app/Contents/MacOS/kennel-barprobe";
+use kennel_guest_sdk::{
+    host_launchctl, host_log, host_spawn, host_state_get, host_state_set, host_window_server, kennel_extension,
+    Manifest, Status, WindowServer,
+};
+use verdict::{describe, summary, verdict};
 
 // A display change legitimately leaves the bar absent for a moment while
 // sketchybar rebuilds one window per item. Requiring two consecutive bad ticks
@@ -33,34 +32,12 @@ const STATE_KEY: &str = "consecutive_missing";
 fn my_manifest() -> Manifest {
     Manifest {
         name: "sketchybar-watchdog",
-        version: "0.2.0",
+        version: "0.3.0",
         description: "Restarts sketchybar when the bar is not actually on screen",
         interval_secs: 5,
-        capabilities: vec!["launchctl", "spawn", "state", "log"],
-        privileged_commands: vec![],
+        capabilities: vec!["launchctl", "spawn", "state", "log", "window_server"],
+        ..Default::default()
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Probe {
-    pub displays: u32,
-    pub with_bar: u32,
-}
-
-// Reads the probe's first line: `displays=2 with_bar=1`. Anything else is treated
-// as no answer rather than as a healthy answer -- see `decide`.
-pub fn parse_probe(stdout: &str) -> Option<Probe> {
-    let line = stdout.lines().next()?;
-    let mut displays = None;
-    let mut with_bar = None;
-    for field in line.split_whitespace() {
-        match field.split_once('=') {
-            Some(("displays", v)) => displays = v.parse().ok(),
-            Some(("with_bar", v)) => with_bar = v.parse().ok(),
-            _ => {}
-        }
-    }
-    Some(Probe { displays: displays?, with_bar: with_bar? })
 }
 
 #[derive(Debug, PartialEq)]
@@ -71,46 +48,42 @@ pub enum Decision {
     Confirming(u32),
     // Missing on `CONFIRM_TICKS` consecutive ticks -- restart, with this detail.
     Restart(String),
-    // The probe could not be trusted. Deliberately NOT a restart: acting on no
-    // information is how a watchdog turns into a restart loop.
+    // The window server could not be read. Deliberately NOT a restart: acting on
+    // no information is how a watchdog turns into a restart loop.
     Unknown(String),
 }
 
-pub fn decide(exit_code: i32, stdout: &str, consecutive: u32) -> Decision {
-    if exit_code != 0 {
-        return Decision::Unknown(format!("probe exited {exit_code}"));
-    }
-    let probe = match parse_probe(stdout) {
-        Some(p) => p,
-        None => return Decision::Unknown("probe printed no parseable summary".into()),
+pub fn decide(snapshot: &Result<WindowServer, String>, consecutive: u32) -> Decision {
+    let snapshot = match snapshot {
+        Ok(s) => s,
+        Err(e) => return Decision::Unknown(e.clone()),
     };
-    // No active displays at all (lid shut, every screen asleep). A bar is
-    // legitimately absent here, and restarting sketchybar at a dark machine
-    // would just churn.
-    if probe.displays == 0 {
-        return Decision::Healthy;
-    }
-    if probe.with_bar >= probe.displays {
+    // No display expects a bar: the lid is shut, every screen is asleep, or every
+    // screen is showing a fullscreen app. Restarting sketchybar would just churn.
+    let (expected, with_bar) = summary(&verdict(&snapshot.displays, &snapshot.windows));
+    if with_bar >= expected {
         return Decision::Healthy;
     }
     let n = consecutive + 1;
     if n < CONFIRM_TICKS {
         Decision::Confirming(n)
     } else {
-        Decision::Restart(format!(
-            "bar missing on {} of {} display(s) for {} consecutive checks",
-            probe.displays - probe.with_bar,
-            probe.displays,
-            n
-        ))
+        Decision::Restart(format!("bar missing on {} of {} display(s) for {} consecutive checks", expected - with_bar, expected, n))
+    }
+}
+
+fn details(snapshot: &Result<WindowServer, String>) -> String {
+    match snapshot {
+        Ok(s) => verdict(&s.displays, &s.windows).iter().map(describe).collect::<Vec<_>>().join("\n"),
+        Err(_) => String::new(),
     }
 }
 
 fn my_check() -> Status {
-    let result = host_spawn("/bin/sh", &["-c", PROBE]);
+    let snapshot = host_window_server("sketchybar");
     let consecutive: u32 = host_state_get(STATE_KEY).parse().unwrap_or(0);
 
-    match decide(result.exit_code, &result.stdout, consecutive) {
+    match decide(&snapshot, consecutive) {
         Decision::Healthy => {
             if consecutive > 0 {
                 host_log("info", "bar is back on every display");
@@ -122,25 +95,19 @@ fn my_check() -> Status {
             host_state_set(STATE_KEY, &n.to_string());
             // Still reported Healthy: this is the debounce window, and a display
             // change that resolves on its own must not show up as a fault.
-            host_log("info", &format!("bar missing (check {n} of {CONFIRM_TICKS}); {}", first_line(&result.stdout)));
+            host_log("info", &format!("bar missing (check {n} of {CONFIRM_TICKS})\n{}", details(&snapshot)));
             Status::Healthy
         }
         Decision::Restart(detail) => {
             host_state_set(STATE_KEY, &(consecutive + 1).to_string());
-            // The full per-display geometry goes to the log, so the next time this
-            // fires there is a record of what the window server actually reported.
-            host_log("warn", &format!("{detail}\n{}", result.stdout.trim()));
+            host_log("warn", &format!("{detail}\n{}", details(&snapshot)));
             Status::Unhealthy(detail)
         }
         Decision::Unknown(why) => {
-            host_log("warn", &format!("cannot tell whether the bar is up: {why}; {}", result.stderr.trim()));
+            host_log("warn", &format!("cannot tell whether the bar is up: {why}"));
             Status::Healthy
         }
     }
-}
-
-fn first_line(s: &str) -> &str {
-    s.lines().next().unwrap_or("")
 }
 
 fn my_fix() {
@@ -157,31 +124,24 @@ kennel_extension!(my_manifest, my_check, my_fix);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kennel_guest_sdk::Space;
+    use verdict::tests::{bar_on, display, two_displays};
 
-    #[test]
-    fn parses_the_probe_summary_line() {
-        let p = parse_probe("displays=2 with_bar=1\ndisplay id=1 ...\n").unwrap();
-        assert_eq!(p, Probe { displays: 2, with_bar: 1 });
-    }
-
-    #[test]
-    fn garbage_output_is_not_mistaken_for_a_healthy_answer() {
-        assert!(parse_probe("").is_none());
-        assert!(parse_probe("segfault").is_none());
-        assert!(parse_probe("displays=2").is_none(), "a half-written line is not an answer");
+    fn snapshot(displays: Vec<kennel_guest_sdk::Display>, bars_on: &[usize]) -> Result<WindowServer, String> {
+        let windows = bars_on.iter().map(|&i| bar_on(&displays[i])).collect();
+        Ok(WindowServer { displays, windows })
     }
 
     #[test]
     fn a_bar_on_every_display_is_healthy() {
-        assert_eq!(decide(0, "displays=2 with_bar=2", 0), Decision::Healthy);
-        assert_eq!(decide(0, "displays=1 with_bar=1", 5), Decision::Healthy, "recovery resets, whatever the counter was");
+        assert_eq!(decide(&snapshot(two_displays(), &[0, 1]), 0), Decision::Healthy);
+        assert_eq!(decide(&snapshot(two_displays(), &[0, 1]), 5), Decision::Healthy, "recovery resets, whatever the counter was");
     }
 
-    // The reported failure: fine on one screen, gone on the other.
     #[test]
     fn a_bar_missing_on_one_of_two_displays_is_confirmed_then_restarted() {
-        assert_eq!(decide(0, "displays=2 with_bar=1", 0), Decision::Confirming(1));
-        match decide(0, "displays=2 with_bar=1", 1) {
+        assert_eq!(decide(&snapshot(two_displays(), &[1]), 0), Decision::Confirming(1));
+        match decide(&snapshot(two_displays(), &[1]), 1) {
             Decision::Restart(d) => assert!(d.contains("1 of 2"), "{d}"),
             other => panic!("expected a restart on the second consecutive check, got {other:?}"),
         }
@@ -191,22 +151,30 @@ mod tests {
     // its windows. One bad tick must never be enough.
     #[test]
     fn a_single_bad_tick_never_restarts_anything() {
-        assert_eq!(decide(0, "displays=2 with_bar=0", 0), Decision::Confirming(1));
+        assert_eq!(decide(&snapshot(two_displays(), &[]), 0), Decision::Confirming(1));
     }
 
-    // A probe that cannot read the window server must not be read as "the bar is
-    // gone" -- that is a restart loop, not a fix.
     #[test]
-    fn an_unusable_probe_never_triggers_a_restart() {
-        assert!(matches!(decide(2, "", 0), Decision::Unknown(_)));
-        assert!(matches!(decide(0, "", 9), Decision::Unknown(_)));
-        assert!(matches!(decide(1, "displays=2 with_bar=0", 9), Decision::Unknown(_)),
-                "a nonzero exit wins over whatever happens to be on stdout");
+    fn an_unreadable_window_server_never_triggers_a_restart() {
+        assert!(matches!(decide(&Err("capability not granted".into()), 9), Decision::Unknown(_)));
     }
 
-    // Lid shut, or every display asleep. Nothing is broken.
     #[test]
     fn no_active_displays_is_healthy_not_a_missing_bar() {
-        assert_eq!(decide(0, "displays=0 with_bar=0", 3), Decision::Healthy);
+        assert_eq!(decide(&snapshot(vec![], &[]), 3), Decision::Healthy);
+    }
+
+    #[test]
+    fn a_fullscreen_display_without_a_bar_never_restarts_sketchybar() {
+        let mut ds = two_displays();
+        ds[0].space = Space::Fullscreen;
+        assert_eq!(decide(&snapshot(ds, &[1]), 5), Decision::Healthy);
+    }
+
+    #[test]
+    fn every_display_fullscreen_is_healthy() {
+        let mut ds = vec![display(1, 0.0, 0.0, 1512.0, 982.0)];
+        ds[0].space = Space::Fullscreen;
+        assert_eq!(decide(&snapshot(ds, &[]), 5), Decision::Healthy);
     }
 }
