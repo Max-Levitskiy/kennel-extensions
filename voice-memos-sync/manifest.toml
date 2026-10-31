@@ -1,0 +1,20 @@
+name = "voice-memos-sync"
+version = "0.1.0"
+description = "Backs up synced Apple Voice Memos to your selected Google Drive account"
+interval_secs = 60
+capabilities = ["fs_watch", "fs_discover", "fs_copy"]
+
+[[fs_subscriptions]]
+id = "recordings"
+path = "~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings"
+pattern = "*.m4a"
+kind = "file"
+recursive = true
+
+[[config_fields]]
+name = "drive"
+label = "Google Drive account"
+[config_fields.directories]
+root = "~/Library/CloudStorage"
+prefix = "GoogleDrive-"
+child = "My Drive"

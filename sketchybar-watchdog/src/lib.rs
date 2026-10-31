@@ -38,6 +38,7 @@ fn my_manifest() -> Manifest {
         interval_secs: 5,
         capabilities: vec!["launchctl", "spawn", "state", "log"],
         privileged_commands: vec![],
+        ..Default::default()
     }
 }
 

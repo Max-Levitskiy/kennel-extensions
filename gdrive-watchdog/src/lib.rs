@@ -4,7 +4,7 @@ const CONFIRM_FAILURES: u32 = 2;
 const GRACE_AFTER_START_SECS: u64 = 120;
 
 fn my_manifest() -> Manifest {
-    Manifest { name: "gdrive-watchdog", version: "0.1.0", description: "Detects Google Drive FileProvider stalls and restarts Drive", interval_secs: 30, capabilities: vec!["spawn", "notify", "state"], privileged_commands: vec![] }
+    Manifest { name: "gdrive-watchdog", version: "0.1.0", description: "Detects Google Drive FileProvider stalls and restarts Drive", interval_secs: 30, capabilities: vec!["spawn", "notify", "state"], privileged_commands: vec![], ..Default::default() }
 }
 
 fn drive_domains() -> Vec<String> {

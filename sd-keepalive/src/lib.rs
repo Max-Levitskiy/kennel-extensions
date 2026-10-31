@@ -10,6 +10,7 @@ fn my_manifest() -> Manifest {
         interval_secs: 2,
         capabilities: vec!["write_file", "log"],
         privileged_commands: vec![],
+        ..Default::default()
     }
 }
 

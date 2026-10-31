@@ -8,6 +8,7 @@ index its GUI reads by default:
 |---|---|
 | `sd-keepalive` | touches a file on the SD card so its reader's PCIe link never idle-parks |
 | `gdrive-watchdog` | Google Drive FileProvider stalls; restarts Drive |
+| `voice-memos-sync` | Typed filesystem events back up iCloud Voice Memos to a selected Google Drive account |
 | `sketchybar-watchdog` | sketchybar missing from any display; restarts it (needs `kennel-barprobe` from Kennel.app) |
 | `aerospace-watchdog` | AeroSpace running without its CLI socket, so `aerospace` commands fail; restarts AeroSpace |
 
