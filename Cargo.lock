@@ -27,7 +27,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "kennel-guest-sdk"
 version = "0.1.0"
-source = "git+https://github.com/Max-Levitskiy/kennel?rev=17ae01b5718da645c87ee885c59ab94f0d677193#17ae01b5718da645c87ee885c59ab94f0d677193"
+source = "git+https://github.com/Max-Levitskiy/kennel?branch=main#93a42bbb4aea24dd09a1aa9926b3632c2988a20a"
 dependencies = [
  "serde",
  "serde_json",

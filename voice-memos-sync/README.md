@@ -44,6 +44,4 @@ the selected destination must be supported by the Kennel directory provider.
 
 ### Dependency
 
-This PR pins the Kennel SDK to the commit of PR #15 to allow its CI to run.
-Change the dependency back to main and regenerate Cargo.lock after Kennel
-PR #15 is merged.
+The extension uses the Kennel SDK from main, after kennel#15 was merged.
